@@ -1,0 +1,180 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>YouTube AI Notes Generator</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>🎥 YouTube AI Notes Generator</h1>
+            <p>Transform any YouTube video into structured, easy-to-read notes</p>
+        </header>
+
+        <div class="input-section">
+            <input type="text" 
+                   id="youtube-url" 
+                   placeholder="Paste YouTube URL here (e.g., https://youtu.be/... or https://www.youtube.com/watch?v=...)"
+                   class="url-input">
+            <button id="generate-btn" class="generate-btn">Generate Notes ✨</button>
+        </div>
+
+        <div id="loading" class="loading" style="display: none;">
+            <div class="spinner"></div>
+            <p>Processing video and generating notes... This may take 10-30 seconds.</p>
+        </div>
+
+        <div id="error" class="error" style="display: none;"></div>
+
+        <div id="notes-container" class="notes-container" style="display: none;">
+            <div class="notes-header">
+                <h2>📝 Generated Notes</h2>
+                <button id="copy-btn" class="copy-btn">Copy Notes</button>
+            </div>
+            <div id="notes-content" class="notes-content"></div>
+        </div>
+    </div>
+
+    <script>
+        const generateBtn = document.getElementById('generate-btn');
+        const youtubeUrlInput = document.getElementById('youtube-url');
+        const loadingDiv = document.getElementById('loading');
+        const errorDiv = document.getElementById('error');
+        const notesContainer = document.getElementById('notes-container');
+        const notesContent = document.getElementById('notes-content');
+        const copyBtn = document.getElementById('copy-btn');
+
+        // Check health on load
+        fetch('/health')
+            .then(res => res.json())
+            .then(data => {
+                if (!data.api_key_configured) {
+                    showError('⚠️ Gemini API key not configured. Please check the .env file.');
+                }
+            });
+
+        generateBtn.addEventListener('click', async () => {
+            const youtubeUrl = youtubeUrlInput.value.trim();
+            
+            if (!youtubeUrl) {
+                showError('Please enter a YouTube URL');
+                return;
+            }
+
+            // Reset UI
+            hideError();
+            hideNotes();
+            showLoading();
+
+            try {
+                const response = await fetch('/generate_notes', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({ youtube_url: youtubeUrl })
+                });
+
+                const data = await response.json();
+
+                if (!response.ok) {
+                    throw new Error(data.error || 'Failed to generate notes');
+                }
+
+                // Display notes with markdown formatting
+                const formattedNotes = formatMarkdown(data.notes);
+                notesContent.innerHTML = formattedNotes;
+                showNotes();
+                
+            } catch (error) {
+                showError(error.message);
+            } finally {
+                hideLoading();
+            }
+        });
+
+        copyBtn.addEventListener('click', async () => {
+            const notesText = notesContent.innerText;
+            try {
+                await navigator.clipboard.writeText(notesText);
+                showTemporaryMessage('✅ Notes copied to clipboard!', 'success');
+            } catch (err) {
+                showTemporaryMessage('❌ Failed to copy notes', 'error');
+            }
+        });
+
+        function formatMarkdown(text) {
+            // Convert markdown to HTML
+            let html = text
+                // Headers
+                .replace(/^# (.*$)/gm, '<h1>$1</h1>')
+                .replace(/^## (.*$)/gm, '<h2>$1</h2>')
+                .replace(/^### (.*$)/gm, '<h3>$1</h3>')
+                // Bold
+                .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
+                // Italic
+                .replace(/\*(.*?)\*/g, '<em>$1</em>')
+                // Bullet points
+                .replace(/^- (.*$)/gm, '<li>$1</li>')
+                // Numbered lists
+                .replace(/^\d+\. (.*$)/gm, '<li>$1</li>')
+                // Wrap consecutive list items in ul
+                .replace(/(<li>.*<\/li>\n?)+/g, function(match) {
+                    return '<ul>' + match + '</ul>';
+                })
+                // Line breaks
+                .replace(/\n/g, '<br>');
+            
+            return html;
+        }
+
+        function showLoading() {
+            loadingDiv.style.display = 'block';
+            generateBtn.disabled = true;
+            generateBtn.textContent = 'Processing...';
+        }
+
+        function hideLoading() {
+            loadingDiv.style.display = 'none';
+            generateBtn.disabled = false;
+            generateBtn.textContent = 'Generate Notes ✨';
+        }
+
+        function showError(message) {
+            errorDiv.textContent = message;
+            errorDiv.style.display = 'block';
+            setTimeout(() => {
+                if (errorDiv.style.display === 'block') {
+                    errorDiv.style.display = 'none';
+                }
+            }, 8000);
+        }
+
+        function hideError() {
+            errorDiv.style.display = 'none';
+        }
+
+        function showNotes() {
+            notesContainer.style.display = 'block';
+            notesContainer.scrollIntoView({ behavior: 'smooth' });
+        }
+
+        function hideNotes() {
+            notesContainer.style.display = 'none';
+        }
+
+        function showTemporaryMessage(message, type) {
+            const messageDiv = document.createElement('div');
+            messageDiv.className = `temporary-message ${type}`;
+            messageDiv.textContent = message;
+            document.body.appendChild(messageDiv);
+            
+            setTimeout(() => {
+                messageDiv.remove();
+            }, 3000);
+        }
+    </script>
+</body>
+</html>
